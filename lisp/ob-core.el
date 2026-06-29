@@ -982,6 +982,35 @@ guess will be made."
 	    (run-hooks 'org-babel-after-execute-hook)
 	    result)))))))
 
+(defun org-babel-call (name &rest bindings)
+  "Call the named source block NAME and return its result.
+
+NAME is the name of a source block in the current buffer.  BINDINGS is
+a property list of variable assignments; each key is a keyword naming
+one of the block's variables and the following element is the Lisp
+value to bind to it.  For example:
+
+  (org-babel-call \"summary\" :run 1 :rows table)
+
+The values are passed as real Lisp objects, so any value -- a number,
+string, list or whole table -- is forwarded without serialization or
+quoting (contrast a header reference like :var out=NAME(arg=val), whose
+arguments are read back from a string).  NAME runs with its own header
+arguments (language, session, and so on); only the listed variables are
+overridden.  The result keeps its type and is not inserted into the
+buffer, so calls compose and nest as ordinary Lisp."
+  (let ((location (or (org-babel-find-named-block name)
+                      (user-error "No source block named `%s'" name))))
+    (org-babel-execute-src-block
+     nil
+     (org-with-point-at location (org-babel-get-src-block-info 'no-eval))
+     (append
+      (cl-loop for (key value) on bindings by #'cddr
+               collect (cons :var
+                             (cons (intern (substring (symbol-name key) 1))
+                                   value)))
+      '((:results . "silent"))))))
+
 (defun org-babel-expand-body:generic (body params &optional var-lines)
   "Expand BODY with PARAMS.
 Expand a block of code with org-babel according to its header

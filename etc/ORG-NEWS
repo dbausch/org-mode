@@ -228,6 +228,21 @@ needs. The recommended alternative value is ~itemize~.
 Given the completed and total number of tasks, format the percent
 cookie =[N%]=.
 
+*** New function ~org-babel-call~
+
+Call a named source block from Lisp and return its result, binding
+variables from a property list of real Lisp values:
+
+#+begin_src emacs-lisp
+(org-babel-call "summary" :run 1 :rows table)
+#+end_src
+
+Unlike a header reference such as =:var out=block(arg=val)=, the
+arguments are ordinary Lisp objects rather than a string, so lists and
+tables are forwarded without quoting.  The block runs with its own
+header arguments; only the listed variables are overridden.  The result
+keeps its type, so calls compose and nest.
+
 ** Removed or renamed functions and variables
 
 *** ~org-babel-remote-temporary-directory~ is now obsolete
