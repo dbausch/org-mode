@@ -243,6 +243,17 @@ tables are forwarded without quoting.  The block runs with its own
 header arguments; only the listed variables are overridden.  The result
 keeps its type, so calls compose and nest.
 
+Arguments after the keyword =:&headers= are header arguments merged into
+the block for that call -- for example to run the same query block
+against another backend:
+
+#+begin_src emacs-lisp
+(org-babel-call "top-customers" :since date :&headers :database "prod")
+#+end_src
+
+=:results= stays fixed (the result is always returned silently) and
+cannot be set this way.
+
 ** Removed or renamed functions and variables
 
 *** ~org-babel-remote-temporary-directory~ is now obsolete

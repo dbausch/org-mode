@@ -982,25 +982,43 @@ guess will be made."
 	    (run-hooks 'org-babel-after-execute-hook)
 	    result)))))))
 
-(defun org-babel-call (name &rest bindings)
+(defun org-babel-call (name &rest args)
   "Call the named source block NAME and return its result.
 
-NAME is the name of a source block in the current buffer.  BINDINGS is
-a property list of variable assignments; each key is a keyword naming
-one of the block's variables and the following element is the Lisp
-value to bind to it.  For example:
+NAME is the name of a source block in the current buffer.  ARGS up to
+the keyword `:&headers' are variable assignments; each key is a keyword
+naming one of the block's variables and the following element is the
+Lisp value to bind to it.  For example:
 
   (org-babel-call \"summary\" :run 1 :rows table)
 
 The values are passed as real Lisp objects, so any value -- a number,
 string, list or whole table -- is forwarded without serialization or
 quoting (contrast a header reference like :var out=NAME(arg=val), whose
-arguments are read back from a string).  NAME runs with its own header
-arguments (language, session, and so on); only the listed variables are
-overridden.  The result keeps its type and is not inserted into the
-buffer, so calls compose and nest as ordinary Lisp."
-  (let ((location (or (org-babel-find-named-block name)
-                      (user-error "No source block named `%s'" name))))
+arguments are read back from a string).
+
+ARGS after the keyword `:&headers' are header arguments merged into the
+block's own header arguments for this call -- for example :session or
+:dir, or :database to run the same query block against another backend:
+
+  (org-babel-call \"top-customers\" :since date :&headers :database \"prod\")
+
+A string `:var' after `:&headers' (e.g. :var \"cell=tbl[1,1]\") is read
+back through Org's reference syntax, so it accepts table indexing, named
+tables and block calls, unlike the object-valued bindings above.
+
+NAME otherwise runs with its own header arguments; only the listed
+variables and header arguments are overridden.  `:results' is fixed:
+the result is always returned silently and never inserted, so calls
+compose and nest as ordinary Lisp, and it cannot be set as a header
+argument.
+
+\(fn NAME [:VAR VALUE]... [:&headers [:HEADER VALUE]...])"
+  (let* ((separator (memq :&headers args))
+         (bindings (if separator (butlast args (length separator)) args))
+         (headers (cdr separator))
+         (location (or (org-babel-find-named-block name)
+                       (user-error "No source block named `%s'" name))))
     (org-babel-execute-src-block
      nil
      (org-with-point-at location (org-babel-get-src-block-info 'no-eval))
@@ -1009,6 +1027,10 @@ buffer, so calls compose and nest as ordinary Lisp."
                collect (cons :var
                              (cons (intern (substring (symbol-name key) 1))
                                    value)))
+      (cl-loop for (key value) on headers by #'cddr
+               do (when (eq key :results)
+                    (user-error "`:results' cannot be set as a header argument"))
+               collect (cons key value))
       '((:results . "silent"))))))
 
 (defun org-babel-expand-body:generic (body params &optional var-lines)
