@@ -982,6 +982,85 @@ guess will be made."
 	    (run-hooks 'org-babel-after-execute-hook)
 	    result)))))))
 
+;;;###autoload
+(defun org-babel-call (name &rest args)
+  "Call the source block named NAME and return its result.
+The block is executed with `:results silent': the typed result is
+returned and nothing is inserted into the buffer, so calls compose
+and nest as ordinary Lisp expressions.
+
+Arguments before the first keyword are positional: each value is
+bound, as a real Lisp object, to the block's declared variables in
+the order Babel reports them (variables from the block's
+\"#+begin_src\" line first, then \"#+header:\" lines), exactly as
+on a \"#+call:\" line.  Remaining variables keep their default
+values; supplying more positional arguments than declared
+variables is an error.
+
+The keyword `:var' assigns one variable and may be repeated.  With
+two following arguments (:var \"NAME\" VALUE), VALUE -- any Lisp
+object -- is bound to NAME without further interpretation.  With
+one following argument (:var \"NAME=REF\"), the assignment is
+parsed like a \"#+call:\" argument: REF may use Org's reference
+syntax, e.g. table indexing \"tbl[1,1]\", and is resolved through
+`org-babel-ref-resolve'.
+
+Any other keyword is a header argument merged into the block's
+execution, as on a \"#+call:\" line, e.g. `:dir' or `:eval'.
+`:results' is controlled by `org-babel-call' and cannot be given.
+
+During export, NAME is looked up in the pristine copy of the
+buffer being exported (`org-babel-exp-reference-buffer'), as in
+Babel reference resolution, so a call executed at export time
+finds blocks that are themselves not exported.
+
+\(fn NAME [POSITIONAL...] [KEYWORD VALUE...])"
+  (with-current-buffer (or org-babel-exp-reference-buffer (current-buffer))
+    (let* ((location (or (org-babel-find-named-block name)
+                         (error "No source block named `%s'" name)))
+           (info (org-with-point-at location
+                   (org-babel-get-src-block-info 'no-eval)))
+           (declared (org-babel--get-vars (nth 2 info)))
+           (params nil))
+      ;; Positional arguments, as on a #+call: line (in Babel's
+      ;; declaration order), but binding real Lisp objects.
+      (while (and args (not (keywordp (car args))))
+        (let ((decl (pop declared)))
+          (unless decl
+            (error "Too many positional arguments calling block `%s'" name))
+          (push (cons :var
+                      (cons (cond ((consp decl) (car decl))
+                                  ((and (stringp decl)
+                                        (string-match
+                                         "^\\([^= \f\t\n\r\v]+\\)[ \t]*=" decl))
+                                   (intern (match-string 1 decl)))
+                                  (t (error "Cannot bind variable `%S'" decl)))
+                            (pop args)))
+                params)))
+      ;; Keyword arguments: `:var' assignments and header arguments.
+      (while args
+        (let ((key (pop args)))
+          (pcase key
+            (:var
+             (let ((operands nil))
+               (while (and args (not (keywordp (car args))))
+                 (push (pop args) operands))
+               (pcase (nreverse operands)
+                 (`(,(and (pred stringp) assignment
+                          (guard (string-match-p "=" assignment))))
+                  (push (cons :var assignment) params))
+                 (`(,var ,value)
+                  (push (cons :var (cons (intern var) value)) params))
+                 (_ (error "Invalid `:var' arguments calling block `%s'"
+                           name)))))
+            (:results
+             (error "`:results' cannot be set as a header argument"))
+            ((guard (null args))
+             (error "Missing value for `%s' calling block `%s'" key name))
+            (_ (push (cons key (pop args)) params)))))
+      (org-babel-execute-src-block
+       nil info (append (nreverse params) '((:results . "silent")))))))
+
 (defun org-babel-expand-body:generic (body params &optional var-lines)
   "Expand BODY with PARAMS.
 Expand a block of code with org-babel according to its header

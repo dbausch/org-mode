@@ -242,6 +242,26 @@ information.
 Given the completed and total number of tasks, format the percent
 cookie =[N%]=.
 
+*** New function ~org-babel-call~
+
+Call a named source block from Lisp, following the argument model of
+a =#+call:= line:
+
+#+begin_src emacs-lisp
+(org-babel-call "summary" 2026 :var "rows=data[0]" :dir "/srv")
+#+end_src
+
+Arguments before the first keyword bind the block's declared
+variables positionally, as real Lisp objects — unlike a header
+reference such as =:var out=block(arg=val)=, lists and tables are
+forwarded without serialization or quoting.  The keyword ~:var~
+assigns one variable by name: with two arguments (=:var "name"
+VALUE=) by value, with one (=:var "name=ref"=) through Org's
+reference syntax, as on a =#+call:= line.  Any other keyword is a
+header argument merged into the block's execution, e.g. ~:dir~ or
+~:eval~.  The typed result is returned and nothing is inserted into
+the buffer, so calls compose and nest as ordinary Lisp expressions.
+
 ** Removed or renamed functions and variables
 
 *** ~org-babel-remote-temporary-directory~ is now obsolete
