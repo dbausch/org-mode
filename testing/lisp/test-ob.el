@@ -2912,6 +2912,101 @@ A
           (should (string= (org-element-property :value eap)
                            (concat region "\n"))))))))
 
+(ert-deftest test-ob-core/org-babel-call-positional ()
+  "Positional arguments bind declared variables in order, as real
+Lisp objects."
+  (should
+   (equal 30
+          (org-test-with-temp-text
+              "#+name: add\n#+begin_src emacs-lisp :var a=1 :var b=2\n(+ a b)\n#+end_src\n"
+            (org-babel-call "add" 10 20)))))
+
+(ert-deftest test-ob-core/org-babel-call-var-by-value ()
+  "`:var NAME VALUE' binds VALUE exactly as given."
+  (should
+   (equal 30
+          (org-test-with-temp-text
+              "#+name: add\n#+begin_src emacs-lisp :var a=1 :var b=2\n(+ a b)\n#+end_src\n"
+            (org-babel-call "add" :var "a" 10 :var "b" 20)))))
+
+(ert-deftest test-ob-core/org-babel-call-var-keyword-value ()
+  "A `:var' VALUE that is itself a keyword is bound literally, not
+mistaken for the start of the next keyword argument."
+  (should
+   (eq :foo
+       (org-test-with-temp-text
+           "#+name: echo\n#+begin_src emacs-lisp :var a=1\na\n#+end_src\n"
+         (org-babel-call "echo" :var "a" :foo)))))
+
+(ert-deftest test-ob-core/org-babel-call-header-arg ()
+  "Any keyword other than `:var' is a header argument merged into
+the block's execution."
+  (should
+   (equal "/tmp/"
+          (org-test-with-temp-text
+              "#+name: showdir\n#+begin_src emacs-lisp\ndefault-directory\n#+end_src\n"
+            (org-babel-call "showdir" :dir "/tmp/")))))
+
+(ert-deftest test-ob-core/org-babel-call-results-locked ()
+  "`:results' cannot be overridden."
+  (should-error
+   (org-test-with-temp-text
+       "#+name: foo\n#+begin_src emacs-lisp\n1\n#+end_src\n"
+     (org-babel-call "foo" :results "value"))))
+
+(ert-deftest test-ob-core/org-babel-call-too-many-positional ()
+  "Supplying more positional arguments than declared variables is
+an error."
+  (should-error
+   (org-test-with-temp-text
+       "#+name: one-var\n#+begin_src emacs-lisp :var a=1\na\n#+end_src\n"
+     (org-babel-call "one-var" 10 20))))
+
+(ert-deftest test-ob-core/org-babel-call-missing-block ()
+  "Calling a name with no matching source block is an error."
+  (should-error
+   (org-test-with-temp-text "text, no blocks\n"
+     (org-babel-call "nope"))))
+
+(ert-deftest test-ob-core/org-babel-call-var-requires-name-and-value ()
+  "`:var' with a missing value is a clear error, not a silent
+misparse of whatever keyword follows."
+  (should-error
+   (org-test-with-temp-text
+       "#+name: echo\n#+begin_src emacs-lisp :var a=1\na\n#+end_src\n"
+     (org-babel-call "echo" :var "a" :var "b" 1))))
+
+(ert-deftest test-ob-core/org-babel-call-var-name-must-be-string ()
+  "`:var' NAME must be a string."
+  (should-error
+   (org-test-with-temp-text
+       "#+name: echo\n#+begin_src emacs-lisp :var a=1\na\n#+end_src\n"
+     (org-babel-call "echo" :var 'a 1))))
+
+(ert-deftest test-ob-core/org-babel-call-reference-resolution ()
+  "Org's reference syntax (table indexing, etc.) is available by
+calling `org-babel-ref-resolve' directly and passing its result as
+VALUE -- `org-babel-call' has no dedicated syntax of its own for
+this."
+  (should
+   (equal 2
+          (org-test-with-temp-text
+              (concat "#+name: tbl\n#+begin_src emacs-lisp\n'((1 2) (3 4))\n#+end_src\n\n"
+                      "#+name: showcell\n#+begin_src emacs-lisp :var cell=1\ncell\n#+end_src\n")
+            (org-babel-call "showcell" :var "cell" (org-babel-ref-resolve "tbl[0,1]"))))))
+
+(ert-deftest test-ob-core/org-babel-call-composes ()
+  "Positional and `:var' values are ordinary Lisp expressions,
+evaluated the normal way -- variables and nested `org-babel-call'
+results compose with no special quoting convention."
+  (should
+   (equal 107
+          (org-test-with-temp-text
+              (concat "#+name: seven\n#+begin_src emacs-lisp\n7\n#+end_src\n\n"
+                      "#+name: add\n#+begin_src emacs-lisp :var a=1 :var b=2\n(+ a b)\n#+end_src\n")
+            (let ((my-var 100))
+              (org-babel-call "add" my-var (org-babel-call "seven")))))))
+
 (provide 'test-ob)
 
 ;;; test-ob.el ends here

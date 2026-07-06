@@ -982,6 +982,77 @@ guess will be made."
 	    (run-hooks 'org-babel-after-execute-hook)
 	    result)))))))
 
+;;;###autoload
+(defun org-babel-call (name &rest args)
+  "Execute the source block named NAME, binding its variables to the
+values given, and return the result with its type intact.
+
+Arguments before the first keyword bind the block's declared
+variables positionally, in declaration order.  The keyword `:var'
+binds one variable by name and always takes two arguments, NAME
+and VALUE.  NAME is a string, an ordinary expression rather than a
+literal, so it can be computed; VALUE is any Lisp object, bound
+as-is.  Any other keyword is a header argument merged into the
+block's execution, e.g. `:dir' or `:cmdline'.  Each keyword takes
+exactly one Lisp value, so a value that looks like several words
+in header-line syntax, such as `:cmdline' \"-O2 -Wall\", is a
+single Lisp string here, not two arguments.
+
+Unlike a \"#+call:\" line, there is no reference syntax: for table
+indexing or a block call, use `org-babel-ref-resolve' and pass its
+result as VALUE.  `:results' cannot be overridden.
+
+\(fn NAME [POSITIONAL...] [:var NAME VALUE]... [KEYWORD VALUE]...)"
+  ;; Resolve against the pristine buffer during export, like other
+  ;; Babel references, so a call finds blocks not themselves exported.
+  (with-current-buffer (or org-babel-exp-reference-buffer (current-buffer))
+    (let* ((location (or (org-babel-find-named-block name)
+                         (error "No source block named `%s'" name)))
+           (info (org-with-point-at location
+                   (org-babel-get-src-block-info 'no-eval)))
+           (declared (org-babel--get-vars (nth 2 info)))
+           (params nil))
+      ;; Positional arguments bind declared variables in order.
+      (while (and args (not (keywordp (car args))))
+        (let ((decl (pop declared)))
+          (unless decl
+            (error "Too many positional arguments calling block `%s'" name))
+          (push (cons :var
+                      (cons (cond ((consp decl) (car decl))
+                                  ((and (stringp decl)
+                                        (string-match
+                                         "^\\([^= \f\t\n\r\v]+\\)[ \t]*=" decl))
+                                   (intern (match-string 1 decl)))
+                                  (t (error "Cannot bind variable `%S'" decl)))
+                            (pop args)))
+                params)))
+      ;; Keyword arguments: `:var' bindings and header-argument overrides.
+      (while args
+        (let ((key (pop args)))
+          (unless (keywordp key)
+            (error "Expected a keyword, got `%S' calling block `%s' -- missing a `:var' value?"
+                   key name))
+          (pcase key
+            (:var
+             (unless (cdr args)
+               (error "`:var' requires a name and a value calling block `%s'" name))
+             (let ((var-name (pop args))
+                   (value (pop args)))
+               (unless (stringp var-name)
+                 (error "`:var' name must be a string, not `%S', calling block `%s'"
+                        var-name name))
+               (push (cons :var (cons (intern var-name) value)) params)))
+            (:results
+             (error "`:results' cannot be set as a header argument"))
+            (_
+             (unless args
+               (error "Missing value for `%s' calling block `%s'" key name))
+             (push (cons key (pop args)) params)))))
+      ;; Forced silent so nothing is inserted and the result composes
+      ;; as an ordinary Lisp value.
+      (org-babel-execute-src-block
+       nil info (append (nreverse params) '((:results . "silent")))))))
+
 (defun org-babel-expand-body:generic (body params &optional var-lines)
   "Expand BODY with PARAMS.
 Expand a block of code with org-babel according to its header
